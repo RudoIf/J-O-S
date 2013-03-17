@@ -17,15 +17,17 @@ pgfault(struct UTrapframe *utf)
 	void *addr = (void *) utf->utf_fault_va;
 	uint32_t err = utf->utf_err;
 	int r;
-
 	// Check that the faulting access was (1) a write, and (2) to a
 	// copy-on-write page.  If not, panic.
 	// Hint:
 	//   Use the read-only page table mappings at vpt
 	//   (see <inc/memlayout.h>).
-
+	//cprintf("pgfault: do page fault here %x\n",utf->utf_eflags);
 	// LAB 4: Your code here.
-
+	if((err & FEC_WR) == 0)
+		panic("pgfault: fault is not a write (err: %08x va: %08x ip: %08x)",err, addr, utf->utf_eip);
+	if ((vpd[PDX(addr)] & PTE_P) == 0 || (vpt[PGNUM(addr)] & PTE_COW) == 0)
+		panic ("pgfault: not a write or attempting to access a non-COW page");
 	// Allocate a new page, map it at a temporary location (PFTEMP),
 	// copy the data from the old page to the new page, then move the new
 	// page to the old page's address.
@@ -34,8 +36,21 @@ pgfault(struct UTrapframe *utf)
 	//   No need to explicitly delete the old page's mapping.
 
 	// LAB 4: Your code here.
-
-	panic("pgfault not implemented");
+	if ((r = sys_page_alloc (0, (void *)PFTEMP, PTE_U|PTE_P|PTE_W)) < 0)
+		panic ("pgfault: page allocation failed : %e", r);
+	addr = ROUNDDOWN (addr, PGSIZE);
+	memmove (PFTEMP, addr, PGSIZE);
+	if((r = sys_page_map (0, PFTEMP, 0, addr, PTE_U|PTE_P|PTE_W)) < 0)
+		panic ("pgfault: page mapping failed : %e", r);
+	if((r = sys_page_unmap(0,PFTEMP)) < 0)
+		panic("pgfault: page unmapping failed : %e", r);
+	//cprintf("pgfault: finish\n");
+	/* int gaga = 0; */
+	/* __asm__ volatile("movl %%esp, %0\n\t" */
+	/* 		 :"=r"(gaga) */
+	/* 		 ::); */
+	/* cprintf("gaga----------%x\n", gaga); */
+	//panic("pgfault not implemented");
 }
 
 //
@@ -55,7 +70,30 @@ duppage(envid_t envid, unsigned pn)
 	int r;
 
 	// LAB 4: Your code here.
-	panic("duppage not implemented");
+	int perm;
+	void * addr = (void *) ((uint32_t) pn * PGSIZE);
+	pte_t pte = vpt[PGNUM(addr)];
+	perm = pte & PTE_SYSCALL;
+	
+	if (perm & (PTE_W|PTE_COW)) 
+	{
+		 perm &= ~PTE_W;
+		 perm |= PTE_COW;
+		//map in child
+		if ((r = sys_page_map(0, addr, envid, addr, perm)) < 0)
+			panic ("duppage: page re-mapping failed at 1 : %e", r);
+		//remap in the parent		
+		if ((r = sys_page_map(0, addr, 0, addr, perm)) < 0)
+			panic ("duppage: page re-mapping failed at 2 : %e", r);
+	}
+	else //include PTE_SHARE
+	{
+		cprintf("map two %x----%x\n",envid,addr);
+		if ((r = sys_page_map (0, addr, envid, addr, PTE_U|PTE_P)) < 0)
+			panic ("duppage: page re-mapping failed at 3 : %e", r);
+	}
+
+	//panic("duppage not implemented");
 	return 0;
 }
 
@@ -79,7 +117,44 @@ envid_t
 fork(void)
 {
 	// LAB 4: Your code here.
-	panic("fork not implemented");
+	envid_t envidnum;
+	uint32_t addr;
+	int r;
+	extern void _pgfault_upcall(void);
+	
+	set_pgfault_handler(pgfault);
+	
+	envidnum = sys_exofork();
+	cprintf("%s:fork[%d]: sys_exofork() return %x\n",__FILE__, __LINE__, envidnum);
+	if (envidnum < 0)
+		panic("sys_exofork: %e", envidnum);
+	// We’re the child
+	if (envidnum == 0) {
+		thisenv = &envs[ENVX(sys_getenvid())];
+		return 0;
+	}
+	// We’re the parent.
+	for (addr =  UTEXT; addr < UXSTACKTOP - PGSIZE; addr += PGSIZE) 
+	{
+		if(	(vpd[PDX(addr)] & PTE_P) > 0 && (vpt[PGNUM(addr)] & PTE_P) > 0 && (vpt[PGNUM(addr)] & PTE_U) > 0)
+			duppage(envidnum,PGNUM(addr));
+	}
+	if ((r = sys_page_alloc (envidnum, (void *)(UXSTACKTOP - PGSIZE), PTE_U|PTE_W|PTE_P)) < 0)
+		panic ("fork: page allocation failed : %e", r);
+	//cprintf("%x-----%x\n",&envid,envid);
+	sys_env_set_pgfault_upcall (envidnum, _pgfault_upcall);
+	//cprintf("%x-----%x\n",&envid,envid);
+	// Start the child environment running
+	if((r = sys_env_set_status(envidnum, ENV_RUNNABLE)) < 0)
+		panic("fork: set child env status failed : %e", r);
+	//cprintf("%x-----%x\n",&envid,envid);
+	//cprintf("fork in %x have set %x ,runnable\n",sys_getenvid(),envidnum);
+	//cprintf("fork in %x have set %x ,runnable\n",sys_getenvid(),envidnum);
+	//cprintf("%x-----%x\n",&envidnum,envidnum);
+	cprintf("%s:fork[%d]: fork return\n", __FILE__, __LINE__);
+	return envidnum;
+
+	//panic("fork not implemented");
 }
 
 // Challenge!

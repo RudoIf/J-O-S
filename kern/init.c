@@ -14,14 +14,19 @@
 #include <kern/picirq.h>
 #include <kern/cpu.h>
 #include <kern/spinlock.h>
+#include <kern/time.h>
+#include <kern/pci.h>
 
 static void boot_aps(void);
+
 
 
 void
 i386_init(void)
 {
 	extern char edata[], end[];
+        // Lab1 only
+        char chnum1 = 0, chnum2 = 0, ntest[256] = {};
 
 	// Before doing anything else, complete the ELF loading process.
 	// Clear the uninitialized global data (BSS) section of our program.
@@ -32,12 +37,24 @@ i386_init(void)
 	// Can't call cprintf until after we do this!
 	cons_init();
 
-	cprintf("6828 decimal is %o octal!\n", 6828);
+	cprintf("6828 decimal is %o octal!%n\n%n", 6828, &chnum1, &chnum2);
+	cprintf("chnum1: %d chnum2: %d\n", chnum1, chnum2);
+	cprintf("%n", NULL);
+	memset(ntest, 0xd, sizeof(ntest) - 1);
+	cprintf("%s%n", ntest, &chnum1); 
+	cprintf("chnum1: %d\n", chnum1);
 
+
+
+	extern unsigned char mpentry_start[];
+	extern void mp_main(void);
+	cprintf("mpentry_start address is %x\n", (int)mpentry_start);
+	cprintf("mp_main address is %x\n", (int)mp_main);
 	// Lab 2 memory management initialization functions
 	mem_init();
-
 	// Lab 3 user environment initialization functions
+
+
 	env_init();
 	trap_init();
 
@@ -48,8 +65,13 @@ i386_init(void)
 	// Lab 4 multitasking initialization functions
 	pic_init();
 
+	// Lab 6 hardware initialization functions
+	time_init();
+	pci_init();
+
 	// Acquire the big kernel lock before waking up APs
 	// Your code here:
+	lock_kernel();
 
 	// Starting non-boot CPUs
 	boot_aps();
@@ -59,14 +81,35 @@ i386_init(void)
 	for (i = 0; i < NCPU; i++)
 		ENV_CREATE(user_idle, ENV_TYPE_IDLE);
 
+	// Start fs.
+	ENV_CREATE(fs_fs, ENV_TYPE_FS);
+
+#if !defined(TEST_NO_NS)
+	// Start ns.
+	ENV_CREATE(net_ns, ENV_TYPE_NS);
+#endif
+
 #if defined(TEST)
 	// Don't touch -- used by grading script!
 	ENV_CREATE(TEST, ENV_TYPE_USER);
 #else
 	// Touch all you want.
-	ENV_CREATE(user_primes, ENV_TYPE_USER);
+	// ENV_CREATE(net_testoutput, ENV_TYPE_USER);
+	// ENV_CREATE(user_echosrv, ENV_TYPE_USER);
+	// ENV_CREATE(user_httpd, ENV_TYPE_USER);
+	//	ENV_CREATE(user_primes, ENV_TYPE_USER);
+//	ENV_CREATE(user_pingpong, ENV_TYPE_USER);
+//	ENV_CREATE(user_forktree, ENV_TYPE_USER);
+	 //ENV_CREATE(user_testfile, ENV_TYPE_USER);
+	 //ENV_CREATE(user_icode, ENV_TYPE_USER);
 #endif // TEST*
 
+	// ENV_CREATE(user_primes, ENV_TYPE_USER);
+	//extern void _pgfault_upcall();
+	//cprintf("%x\n",_pgfault_upcall);
+	//ENV_CREATE(user_yield, ENV_TYPE_USER);
+	//ENV_CREATE(user_yield, ENV_TYPE_USER);
+	//ENV_CREATE(user_yield, ENV_TYPE_USER);
 	// Schedule and run the first user environment!
 	sched_yield();
 }
@@ -121,9 +164,11 @@ mp_main(void)
 	// only one CPU can enter the scheduler at a time!
 	//
 	// Your code here:
+	lock_kernel();
+	sched_yield();
 
 	// Remove this after you finish Exercise 4
-	for (;;);
+	/* for (;;); */
 }
 
 /*

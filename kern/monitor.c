@@ -23,6 +23,7 @@ struct Command {
 };
 
 static struct Command commands[] = {
+	{ "backtrace","Back trace the frame and stack",mon_backtrace},
 	{ "help", "Display this list of commands", mon_help },
 	{ "kerninfo", "Display information about the kernel", mon_kerninfo },
 };
@@ -57,10 +58,107 @@ mon_kerninfo(int argc, char **argv, struct Trapframe *tf)
 	return 0;
 }
 
+// Lab1 only
+// read the pointer to the retaddr on the stack
+static uint32_t
+read_pretaddr() {
+    uint32_t pretaddr;
+    __asm __volatile("leal 4(%%ebp), %0" : "=r" (pretaddr)); 
+    return pretaddr;
+}
+
+void
+do_overflow(void)
+{
+    cprintf("Overflow success\n");
+}
+
+void
+start_overflow(void)
+{
+	// You should use a techique similar to buffer overflow
+	// to invoke the do_overflow function and
+	// the procedure must return normally.
+
+    // And you must use the "cprintf" function with %n specifier
+    // you augmented in the "Exercise 9" to do this job.
+
+    // hint: You can use the read_pretaddr function to retrieve 
+    //       the pointer to the function call return address;
+	//00000012 <do_overflow>: I shall overflow the esp
+	//overflow me's ebp's value: $2 = 0xf010fe08
+    char str[256] = {};
+    int nstr = 0;
+    char *pret_addr;
+	// Your code here.
+	int i = 0;	
+	while(i < 256)
+	{
+		str[i] = ' ';
+		i++;
+	}
+    pret_addr = (char *)read_pretaddr();
+	uint32_t ebp =  read_ebp();
+	void (*doover)();
+	doover = do_overflow;
+	void (*overme)();
+
+	uint32_t buffover[4];
+	buffover[0] = (uint32_t)doover+3;
+	//buffover[1] = *((int *)(*((int *)ebp)));
+	//buffover[2] = *((int *)(*((int *)ebp))+1);
+	i = 0;
+	while(i < 4)
+	{
+		nstr = (buffover[i/4]>>(8*i)) & 0x000000ff;
+		str[nstr] = '\0'; 
+		cprintf("%s%n",str,pret_addr+i); 
+		//cprintf("%x---%x\n",nstr,*(pret_addr+i));
+		str[nstr] = ' ';
+		i++;
+	}
+
+
+}
+
+void
+overflow_me(void)
+{
+        start_overflow();
+}
+
 int
 mon_backtrace(int argc, char **argv, struct Trapframe *tf)
 {
 	// Your code here.
+	struct Eipdebuginfo info;
+	uint32_t ebp =  read_ebp();
+	uint32_t eip =  read_eip();
+	uint32_t arg[5];
+	memset(arg,0,5);
+	cprintf("Stack backtrace:\n");
+	do{
+		
+		cprintf("ebp %08x eip %08x args %08x %08x %08x %08x %08x \n",ebp,eip,arg[0],arg[1],arg[2],arg[3],arg[4]);
+		
+		debuginfo_eip((uintptr_t)eip,&info);
+		cprintf("\t%s:%d: %s+%d\n",info.eip_file,info.eip_line,info.eip_fn_name,eip -info.eip_fn_addr);
+
+		eip = *((uint32_t*)ebp+1);
+		ebp = *((uint32_t*)ebp);		
+		int i = 0;
+		while(i<5)
+		{
+			arg[i] = *((uint32_t*)ebp+2+i);
+			i++;
+		}
+	}while(ebp != 0);
+
+	
+	
+
+    overflow_me();
+    cprintf("Backtrace success\n");
 	return 0;
 }
 
