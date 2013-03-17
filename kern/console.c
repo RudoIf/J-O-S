@@ -101,6 +101,9 @@ serial_init(void)
 	(void) inb(COM1+COM_IIR);
 	(void) inb(COM1+COM_RX);
 
+	// Enable serial interrupts
+	if (serial_exists)
+		irq_setmask_8259A(irq_mask_8259A & ~(1<<4));
 }
 
 
@@ -287,7 +290,7 @@ static uint8_t shiftmap[256] =
 
 static uint8_t ctlmap[256] = 
 {
-	NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO, 
+	NO,      NO,      NO,	   NO,		NO,		 NO,      NO,      NO, 
 	NO,      NO,      NO,      NO,      NO,      NO,      NO,      NO, 
 	C('Q'),  C('W'),  C('E'),  C('R'),  C('T'),  C('Y'),  C('U'),  C('I'),
 	C('O'),  C('P'),  NO,      NO,      '\r',    NO,      C('A'),  C('S'),
@@ -300,6 +303,7 @@ static uint8_t ctlmap[256] =
 	[0xCD] = KEY_RT,		[0xCF] = KEY_END,
 	[0xD0] = KEY_DN,		[0xD1] = KEY_PGDN,
 	[0xD2] = KEY_INS,		[0xD3] = KEY_DEL
+	
 };
 
 static uint8_t *charcode[4] = {
@@ -339,7 +343,6 @@ kbd_proc_data(void)
 		data |= 0x80;
 		shift &= ~E0ESC;
 	}
-
 	shift |= shiftcode[data];
 	shift ^= togglecode[data];
 
@@ -357,6 +360,16 @@ kbd_proc_data(void)
 		cprintf("Rebooting!\n");
 		outb(0x92, 0x3); // courtesy of Chris Frost
 	}
+	if (!(~shift & (CTL | ALT)) && c == KEY_LF) {
+		cprintf("F1!\n");
+	}
+	if (!(~shift & (CTL | ALT)) && c == KEY_DN) {
+		cprintf("F2!\n");
+	}
+	if (!(~shift & (CTL | ALT)) && c == KEY_RT) {
+		cprintf("F3!\n");
+	}
+
 
 	return c;
 }

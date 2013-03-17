@@ -287,3 +287,22 @@ strtol(const char *s, char **endptr, int base)
 	return (neg ? -val : val);
 }
 
+//seperate a str by char 'c' from s
+char *
+strsep(char **sp, char c)
+{
+	char* r = *sp;
+	char* s = *sp;
+
+	for (; *s; s++)
+		if (*s == c){
+			*s	= '\0';
+			*sp = (s+1);
+			if(**sp == '\0')
+				*sp = NULL;
+			return r;
+		}
+	*sp = NULL;
+	return r;
+}
+

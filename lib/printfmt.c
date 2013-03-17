@@ -28,6 +28,14 @@ static const char * const error_string[MAXERROR] =
 	[E_FAULT]	= "segmentation fault",
 	[E_IPC_NOT_RECV]= "env is not recving",
 	[E_EOF]		= "unexpected end of file",
+	[E_NO_DISK]	= "no free space on disk",
+	[E_MAX_OPEN]	= "too many files are open",
+	[E_NOT_FOUND]	= "file or block not found",
+	[E_BAD_PATH]	= "invalid path",
+	[E_FILE_EXISTS]	= "file already exists",
+	[E_NOT_EXEC]	= "file is not a valid executable",
+	[E_NOT_SUPP]	= "operation not supported",
+	[E_PRERM_DENIED] = "permission denied"
 };
 
 /*
@@ -208,10 +216,13 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		// (unsigned) octal
 		case 'o':
 			// Replace this with your code.
-			putch('X', putdat);
-			putch('X', putdat);
-			putch('X', putdat);
-			break;
+			// putch('X', putdat);
+			// putch('X', putdat);
+			// putch('X', putdat);
+			num = getuint(&ap, lflag);
+			base = 8;
+			goto number;
+			
 
 		// pointer
 		case 'p':
@@ -229,6 +240,44 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		number:
 			printnum(putch, putdat, num, base, width, padc);
 			break;
+
+        case 'n': {
+            // You can consult the %n specifier specification of the C99 printf function
+            // for your reference by typing "man 3 printf" on the console. 
+
+            // 
+            // Requirements:
+            // Nothing printed. The argument must be a pointer to a signed char, 
+            // where the number of characters written so far is stored.
+            //b
+
+            // hint:  use the following strings to display the error messages 
+            //        when the cprintf function ecounters the specific cases,
+            //        for example, when the argument pointer is NULL
+            //        or when the number of characters written so far 
+            //        is beyond the range of the integers the signed char type 
+            //        can represent.
+
+            const char *null_error = "\nerror! writing through NULL pointer! (%n argument)\n";
+            const char *overflow_error = "\nwarning! The value %n argument pointed to has been overflowed!\n";
+
+            // Your code here
+		if ((p = va_arg(ap, void *)) == NULL)
+		{		
+			printfmt(putch, putdat, "%s", null_error);
+			break;
+		}		
+		if( (*(int *)putdat) > 127)
+		{
+			(*((unsigned char *)p)) = (*((unsigned char *)putdat));
+			printfmt(putch, putdat, "%s", overflow_error);			
+			break;
+		}
+
+		(*((char *)p)) = (*((char *)putdat));		
+
+            break;
+        }
 
 		// escaped '%' character
 		case '%':
