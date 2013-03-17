@@ -66,6 +66,12 @@ typedef int32_t off_t;
 	(typeof(a)) (ROUNDDOWN((uint32_t) (a) + __n - 1, __n));	\
 })
 
+
+typedef	uint32_t uid_t;		/* user id */
+typedef uint32_t gid_t;		/* group id */
+
+
+
 // Return the offset of 'member' relative to the beginning of a struct type
 #define offsetof(type, member)  ((size_t) (&((type*)0)->member))
 
