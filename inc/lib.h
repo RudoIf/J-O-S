@@ -17,6 +17,9 @@
 #include <inc/memlayout.h>
 #include <inc/syscall.h>
 #include <inc/trap.h>
+#include <inc/fs.h>
+#include <inc/fd.h>
+#include <inc/args.h>
 
 #define USED(x)		(void)(x)
 
@@ -49,6 +52,7 @@ int     sys_map_kernel_page(void* kpage, void* va);
 void	sys_yield(void);
 static envid_t sys_exofork(void);
 int	sys_env_set_status(envid_t env, int status);
+int	sys_env_set_trapframe(envid_t env, struct Trapframe *tf);
 int	sys_env_set_pgfault_upcall(envid_t env, void *upcall);
 int	sys_page_alloc(envid_t env, void *pg, int perm);
 int	sys_page_map(envid_t src_env, void *src_pg,
@@ -57,16 +61,40 @@ int	sys_page_unmap(envid_t env, void *pg);
 int	sys_ipc_try_send(envid_t to_env, uint32_t value, void *pg, int perm);
 int	sys_ipc_recv(void *rcv_pg);
 
-// This must be inlined.  Exercise for reader: why?
+// This must be inlined.  Exercise for reader: why?	
 static __inline envid_t __attribute__((always_inline))
 sys_exofork(void)
 {
 	envid_t ret;
-	__asm __volatile("int %2"
+	//if I push esp it will be a pagefault.I come across a bug here.
+	__asm __volatile(  
+		"pushl %%ecx\n\t"
+		"pushl %%edx\n\t"
+		"pushl %%ebx\n\t"
+		"pushl %%ebp\n\t"
+		"pushl %%esi\n\t"
+		"pushl %%edi\n\t"
+		 
+		"movl %%esp,%%ebp\n\t"
+		"leal .after_sysenter_label, %%esi\n\t"
+		"sysenter\n\t"
+		".after_sysenter_label:\n\t"
+		/* "test $0x200, %%ebx\n\t" */
+		/* "jz .next\n\t" */
+		/* "sti\n\t" */
+		/* ".next:\n\t" */
+				 
+		"popl %%edi\n\t"
+		"popl %%esi\n\t"
+		"popl %%ebp\n\t"
+		"popl %%ebx\n\t"
+		"popl %%edx\n\t"
+		"popl %%ecx\n\t"
+		
 		: "=a" (ret)
-		: "a" (SYS_exofork),
-		  "i" (T_SYSCALL)
-	);
+		: "a" (SYS_exofork)
+		);
+    //cprintf("return %x\n",ret);
 	return ret;
 }
 
@@ -80,6 +108,30 @@ envid_t	ipc_find_env(enum EnvType type);
 envid_t	fork(void);
 envid_t	sfork(void);	// Challenge!
 
+// fd.c
+int	close(int fd);
+ssize_t	read(int fd, void *buf, size_t nbytes);
+ssize_t	write(int fd, const void *buf, size_t nbytes);
+int	seek(int fd, off_t offset);
+void	close_all(void);
+ssize_t	readn(int fd, void *buf, size_t nbytes);
+int	dup(int oldfd, int newfd);
+int	fstat(int fd, struct Stat *statbuf);
+int	stat(const char *path, struct Stat *statbuf);
+
+// file.c
+int	open(const char *path, int mode);
+int	ftruncate(int fd, off_t size);
+int	remove(const char *path);
+int	sync(void);
+
+// pageref.c
+int	pageref(void *addr);
+
+
+// spawn.c
+envid_t	spawn(const char *program, const char **argv);
+envid_t	spawnl(const char *program, const char *arg0, ...);
 
 
 

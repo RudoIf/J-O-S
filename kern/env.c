@@ -119,7 +119,17 @@ env_init(void)
 {
 	// Set up envs array
 	// LAB 3: Your code here.
-
+	int i;
+	env_free_list = NULL;
+	
+	for(i = NENV-1;i>=0;i--)
+	{
+		envs[i].env_id = 0;
+		envs[i].env_status = ENV_FREE;
+		envs[i].env_link = env_free_list;
+		env_free_list = &envs[i];
+	}
+	
 	// Per-CPU part of the initialization
 	env_init_percpu();
 }
@@ -182,7 +192,10 @@ env_setup_vm(struct Env *e)
 	//    - The functions in kern/pmap.h are handy.
 
 	// LAB 3: Your code here.
-
+	e->env_pgdir = page2kva(p);
+	
+	memset(e->env_pgdir,0,PGSIZE);
+	memmove(e->env_pgdir,kern_pgdir,PGSIZE);
 	// UVPT maps the env's own page table read-only.
 	// Permissions: kernel R, user R
 	e->env_pgdir[PDX(UVPT)] = PADDR(e->env_pgdir) | PTE_P | PTE_U;
@@ -247,7 +260,7 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 
 	// Enable interrupts while in user mode.
 	// LAB 4: Your code here.
-
+	e->env_tf.tf_eflags |= FL_IF;
 	// Clear the page fault handler until user installs one.
 	e->env_pgfault_upcall = 0;
 
@@ -258,7 +271,7 @@ env_alloc(struct Env **newenv_store, envid_t parent_id)
 	env_free_list = e->env_link;
 	*newenv_store = e;
 
-	cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
+	// cprintf("[%08x] new env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
 	return 0;
 }
 
@@ -279,6 +292,20 @@ region_alloc(struct Env *e, void *va, size_t len)
 	//   'va' and 'len' values that are not page-aligned.
 	//   You should round va down, and round (va + len) up.
 	//   (Watch out for corner-cases!)
+	va = ROUNDDOWN(va,PGSIZE);
+	len = ROUNDUP(len,PGSIZE);
+	
+	struct Page *pp;
+	int i;
+	for(;len > 0;len -= PGSIZE, va += PGSIZE)
+	{
+		pp = page_alloc(0);
+		if(pp == NULL)
+			panic ("region_alloc: page_alloc failed%e");
+		if((i = page_insert(e->env_pgdir,pp,va,PTE_U | PTE_W)))
+			panic ("region_alloc: page_insert failed%e", i);
+
+	}
 }
 
 //
@@ -335,11 +362,29 @@ load_icode(struct Env *e, uint8_t *binary, size_t size)
 	//  What?  (See env_run() and env_pop_tf() below.)
 
 	// LAB 3: Your code here.
-
+	struct Elf  *hdr;
+	struct Proghdr	*ph,*eph;
+	hdr = (struct Elf*)binary;
+	if(hdr->e_magic != ELF_MAGIC)
+		panic("load_icode: elf wrong");
+	ph = (struct Proghdr *) ((uint8_t *) hdr + hdr->e_phoff);
+	eph = ph + hdr->e_phnum;
+	
+	lcr3(PADDR(e->env_pgdir));
+	for (; ph < eph; ph++)
+	{
+		region_alloc(e,(void*)ph->p_va,ph->p_memsz);
+		memset((void*)ph->p_va,0,ph->p_memsz);
+		memmove ((void *)ph->p_va, binary + ph->p_offset, ph->p_filesz);
+	}
 	// Now map one page for the program's initial stack
 	// at virtual address USTACKTOP - PGSIZE.
 
 	// LAB 3: Your code here.
+	e->env_tf.tf_eip = hdr->e_entry;
+	region_alloc(e,(void*) (USTACKTOP - PGSIZE), PGSIZE);
+	
+	lcr3(PADDR(kern_pgdir));
 }
 
 //
@@ -353,6 +398,17 @@ void
 env_create(uint8_t *binary, size_t size, enum EnvType type)
 {
 	// LAB 3: Your code here.
+	int r;
+	struct Env *e;
+	if((r = env_alloc(&e,0))<0)
+		panic("env_create:env_alloc wrong%e",r);
+	load_icode(e,binary,size);
+	e->env_type = type;
+
+	// If this is the file server (type == ENV_TYPE_FS) give it I/O privileges.
+	// LAB 5: Your code here.
+  if (e->env_type == ENV_TYPE_FS)
+    e->env_tf.tf_eflags |= FL_IOPL_3;
 }
 
 //
@@ -372,7 +428,7 @@ env_free(struct Env *e)
 		lcr3(PADDR(kern_pgdir));
 
 	// Note the environment's demise.
-	cprintf("[%08x] free env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
+	// cprintf("[%08x] free env %08x\n", curenv ? curenv->env_id : 0, e->env_id);
 
 	// Flush all mapped pages in the user portion of the address space
 	static_assert(UTOP % PTSIZE == 0);
@@ -444,7 +500,25 @@ env_pop_tf(struct Trapframe *tf)
 {
 	// Record the CPU we are running on for user-space debugging
 	curenv->env_cpunum = cpunum();
-
+	//cprintf("%s:env_pop_tf[%d]: [%x] to run\n", __FILE__, __LINE__, curenv->env_id);
+	if(tf->tf_trapno == T_SYSCALL)	
+	{
+		unlock_kernel();
+		//print_trapframe(tf);
+		//cprintf("%s:env_pop_tf[%d]: sysexit [%x] with  %x\n", __FILE__, __LINE__, curenv->env_id,curenv->env_tf.tf_regs.reg_eax);
+		asm volatile(
+			"sti\n\t"
+			"sysexit\n\t"
+			:
+			:"c" (curenv->env_tf.tf_regs.reg_ecx),
+			 "d" (curenv->env_tf.tf_regs.reg_edx),
+			 "a" (curenv->env_tf.tf_regs.reg_eax),
+			 "b" (curenv->env_tf.tf_eflags)
+			);
+	}
+	unlock_kernel();
+	//cprintf("%s:env_pop_tf[%d]: iret [%x] with IF %x[%x]\n", __FILE__, __LINE__, curenv->env_id, curenv->env_tf.tf_eflags & FL_IF, read_eflags()& FL_IF);
+	/* cprintf("%x not syscall\t%d\n",curenv->env_id,curenv->env_type); */
 	__asm __volatile("movl %0,%%esp\n"
 		"\tpopal\n"
 		"\tpopl %%es\n"
@@ -482,7 +556,19 @@ env_run(struct Env *e)
 	//	e->env_tf to sensible values.
 
 	// LAB 3: Your code here.
-
+	/* cprintf("go for run\n"); */
+	if(curenv != e)
+	{
+		if(curenv)
+			if (curenv->env_status == ENV_RUNNING)
+				curenv->env_status = ENV_RUNNABLE;
+		curenv = e;
+		e->env_status = ENV_RUNNING;
+		e->env_runs++;
+		lcr3(PADDR(e->env_pgdir));	
+	}
+	//cprintf("%s:env_run[%d]: [%x] to run with IF %x[%x]\n", __FILE__, __LINE__, curenv->env_id, curenv->env_tf.tf_eflags & FL_IF, read_eflags() & FL_IF);
+	env_pop_tf(&e->env_tf);
 	panic("env_run not yet implemented");
 }
 

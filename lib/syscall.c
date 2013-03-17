@@ -3,7 +3,7 @@
 #include <inc/syscall.h>
 #include <inc/lib.h>
 
-static inline int32_t
+static int32_t
 syscall(int num, int check, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, uint32_t a5)
 {
 	int32_t ret;
@@ -16,7 +16,12 @@ syscall(int num, int check, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4, 
 		 "pushl %%edi\n\t"
 				 
                  //Lab 3: Your code here
-
+                 "movl %%esp,%%ebp\n\t"
+                 "leal .after_sysenter_label, %%esi\n\t"
+                 "sysenter\n\t"
+		  ".after_sysenter_label:\n\t"
+				 /* "pushl %%ebx\n\t" */
+				 /* "popf\n\t" */
                  "popl %%edi\n\t"
                  "popl %%esi\n\t"
                  "popl %%ebp\n\t"
@@ -73,6 +78,7 @@ sys_map_kernel_page(void* kpage, void* va)
 void
 sys_yield(void)
 {
+	//cprintf("%s:sys_yield[%d]: [%x] calling sys_yield\n", __FILE__, __LINE__, thisenv->env_id);
 	syscall(SYS_yield, 0, 0, 0, 0, 0, 0);
 }
 
@@ -85,7 +91,7 @@ sys_page_alloc(envid_t envid, void *va, int perm)
 int
 sys_page_map(envid_t srcenv, void *srcva, envid_t dstenv, void *dstva, int perm)
 {
-	return syscall(SYS_page_map, 1, srcenv, (uint32_t) srcva, dstenv, (uint32_t) dstva, perm);
+	return syscall(SYS_page_map, 1, srcenv, (uint32_t) srcva, dstenv, (uint32_t) dstva | perm, 0);
 }
 
 int
@@ -100,6 +106,12 @@ int
 sys_env_set_status(envid_t envid, int status)
 {
 	return syscall(SYS_env_set_status, 1, envid, status, 0, 0, 0);
+}
+
+int
+sys_env_set_trapframe(envid_t envid, struct Trapframe *tf)
+{
+	return syscall(SYS_env_set_trapframe, 1, envid, (uint32_t) tf, 0, 0, 0);
 }
 
 int

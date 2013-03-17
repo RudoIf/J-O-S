@@ -47,7 +47,42 @@
 /*
  * Lab 3: Your code here for generating entry points for the different traps.
  */
+TRAPHANDLER_NOEC(t_divide,T_DIVIDE) 
+TRAPHANDLER_NOEC(t_debug,T_DEBUG) 
+TRAPHANDLER_NOEC(t_nmi,T_NMI) 
+TRAPHANDLER_NOEC(t_brkpt,T_BRKPT) 
+TRAPHANDLER_NOEC(t_oflow,T_OFLOW) 
+TRAPHANDLER_NOEC(t_bound,T_BOUND) 
+TRAPHANDLER_NOEC(t_illop,T_ILLOP) 
+TRAPHANDLER_NOEC(t_device,T_DEVICE)
+TRAPHANDLER(t_dblflt,T_DBLFLT)
+TRAPHANDLER(t_tss,T_TSS)
+TRAPHANDLER(t_segnp,T_SEGNP)
+TRAPHANDLER(t_stack,T_STACK)
+TRAPHANDLER(t_gpflt,T_GPFLT)
+TRAPHANDLER(t_pgflt,T_PGFLT)
+TRAPHANDLER_NOEC(t_fperr,T_FPERR)
+TRAPHANDLER(t_align,T_ALIGN )
+TRAPHANDLER_NOEC(t_mchk,T_MCHK)
+TRAPHANDLER_NOEC(t_simderr,T_SIMDERR)
 
+#for IRQ handler
+TRAPHANDLER_NOEC(t_irq0,IRQ_OFFSET + 0)
+TRAPHANDLER_NOEC(t_irq1,IRQ_OFFSET + 1)
+TRAPHANDLER_NOEC(t_irq2,IRQ_OFFSET + 2)
+TRAPHANDLER_NOEC(t_irq3,IRQ_OFFSET + 3)
+TRAPHANDLER_NOEC(t_irq4,IRQ_OFFSET + 4)
+TRAPHANDLER_NOEC(t_irq5,IRQ_OFFSET + 5)
+TRAPHANDLER_NOEC(t_irq6,IRQ_OFFSET + 6)
+TRAPHANDLER_NOEC(t_irq7,IRQ_OFFSET + 7)
+TRAPHANDLER_NOEC(t_irq8,IRQ_OFFSET + 8)
+TRAPHANDLER_NOEC(t_irq9,IRQ_OFFSET + 9)
+TRAPHANDLER_NOEC(t_irq10,IRQ_OFFSET + 10)
+TRAPHANDLER_NOEC(t_irq11,IRQ_OFFSET + 11)
+TRAPHANDLER_NOEC(t_irq12,IRQ_OFFSET + 12)
+TRAPHANDLER_NOEC(t_irq13,IRQ_OFFSET + 13)
+TRAPHANDLER_NOEC(t_irq14,IRQ_OFFSET + 14)
+TRAPHANDLER_NOEC(t_irq15,IRQ_OFFSET + 15)
 
 
 .globl sysenter_handler;
@@ -57,9 +92,71 @@ sysenter_handler:
 /*
  * Lab 3: Your code here for system call handling
  */
+ 	pushl $0x0 /* parameters to syscall */
+	pushl %edi
+	pushl %ebx
+	pushl %ecx
+	pushl %edx
+	pushl %eax
+	call syscall
+	addl $0x18, %esp /* kill all the parameters */
+	movl %esi, %edx
+	movl %ebp, %ecx
+	sti
+	sysexit
+
+ /*
+	//trapframe
+ 	pushl $0x0							
+	pushl $(T_SYSCALL)
+ 	pushw $0x0
+	pushw %ds
+	pushw $0x0
+	pushw %es
+	pushal
+	
+	pushl %esp
+	
+	//argument
+	pushl $0x0
+	pushl %edi
+	pushl %ebx
+	pushl %ecx
+	pushl %edx
+	pushl %eax
+	
+	
+		
+	call syscall
+	//pop trapframe
+    addl $0x4, %esp
+    popal
+    popl %es
+    popl %ds
+    addl $0x8, %esp
+    
+    //
+	movl %esi, %edx
+	movl %ebp, %ecx
+	sysexit
+	*/
 
 
 /*
  * Lab 3: Your code here for _alltraps
  */
+ _alltraps:								
+	pushw $0x0
+	pushw %ds
+	pushw $0x0
+	pushw %es
+	pushal
+	
+	movl $GD_KD,%eax
+	movw %ax,%ds
+	movw %ax,%es							
+	
+	pushl %esp
+	
+	call trap
 
