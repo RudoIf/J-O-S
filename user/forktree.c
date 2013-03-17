@@ -16,9 +16,11 @@ forkchild(const char *cur, char branch)
 
 	snprintf(nxt, DEPTH+1, "%s%c", cur, branch);
 	if (fork() == 0) {
+		cprintf("%04x: I am '%c'\n", sys_getenvid(), branch);
 		forktree(nxt);
 		exit();
 	}
+	
 }
 
 void

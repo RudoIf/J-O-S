@@ -7,6 +7,11 @@
 #define NULL	((void *) 0)
 #endif /* !NULL */
 
+#define STDINP_FD	0
+#define STDOUT_FD	1
+#define STDERR_FD	3
+
+
 // lib/stdio.c
 void	cputchar(int c);
 int	getchar(void);
@@ -27,7 +32,15 @@ int	printf(const char *fmt, ...);
 int	fprintf(int fd, const char *fmt, ...);
 int	vfprintf(int fd, const char *fmt, va_list);
 
+// lib/sprintf.c
+int	sprintf(char* str, const char *fmt, ...);
+int	vsprintf(char* str, const char *fmt, va_list);
+
+
 // lib/readline.c
-char*	readline(const char *prompt);
+char*	readline(const char *prompt,char *buf,int buflen);
+
+// lib/freadline.c
+const char* freadline(int fd);
 
 #endif /* !JOS_INC_STDIO_H */
